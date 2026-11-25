@@ -25,7 +25,7 @@ The app uses a shared auth-session store to track Supabase sign-in, sign-out, an
 
 ### Support-ticket delivery
 
-Support tickets are delivered to the landing-page admin inbox (`public.messages` in the `blankco-landingpage` Supabase project) as well as the customer's own ticket list. Set `VITE_INTAKE_SUPABASE_URL` and `VITE_INTAKE_SUPABASE_ANON_KEY` to that project; the checked-in `.env.example` documents both pairs. The intake anon key is a publishable value — the landing schema allows anonymous ticket inserts but only allowlisted admins can read them.
+Support tickets are delivered to the landing-page admin inbox (`public.messages` in the `blankco-landingpage` Supabase project) as well as the customer's own ticket list. Set `VITE_INTAKE_SUPABASE_URL` and `VITE_INTAKE_SUPABASE_ANON_KEY` to that project; the checked-in `.env.example` documents both pairs. The intake anon key is a publishable value — the landing schema allows anonymous ticket inserts but only allowlisted admins can read them. The same project's `notify-ticket` Edge Function emails each new ticket to `hello@blankcoph.solutions` via Titan SMTP, so the portal gets email notifications without extra configuration.
 
 The landing site also serves this app at `/portal/`. Its `npm run build` builds `../CPL` with `VITE_BASE_PATH=/portal/` and copies the output into `blankco-landingpage/public/portal` when both repositories are checked out side by side.
 

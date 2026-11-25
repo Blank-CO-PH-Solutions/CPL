@@ -61,17 +61,34 @@ export async function sendTicketToAdmin(ticket: PortalTicket) {
   const name = clip(ticket.name || 'Customer', 2, 100)
   const company = clip(ticket.company || 'Customer portal', 2, 100)
 
-  const { error } = await intakeSupabase.from('messages').insert({
-    name: name.length >= 2 ? name : 'Customer',
-    email,
-    company: company.length >= 2 ? company : 'Customer portal',
-    service_interest: serviceInterest,
-    message,
-    consent: true,
-    is_read: false,
-  })
+  // The landing schema allows anonymous inserts but not reads, so choose the id
+  // here and hand it to the email notifier.
+  const ticketId = crypto.randomUUID()
+  const { error } = await intakeSupabase
+    .from('messages')
+    .insert({
+      id: ticketId,
+      name: name.length >= 2 ? name : 'Customer',
+      email,
+      company: company.length >= 2 ? company : 'Customer portal',
+      service_interest: serviceInterest,
+      message,
+      consent: true,
+      is_read: false,
+    })
 
   if (error) {
     throw new Error(`The ticket could not be delivered to Blank CO support: ${error.message}`)
+  }
+
+  // Best-effort email notification to hello@blankcoph.solutions. The ticket is
+  // already stored, so a mail failure must not fail the submission.
+  try {
+    const { error: notifyError } = await intakeSupabase.functions.invoke('notify-ticket', {
+      body: { id: ticketId },
+    })
+    if (notifyError) console.warn('Ticket email notification failed', notifyError.message)
+  } catch (notifyError) {
+    console.warn('Ticket email notification failed', notifyError)
   }
 }
