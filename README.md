@@ -23,6 +23,14 @@ The app opens on the sign-in/create-account screen. **Continue to demo** is avai
 
 The app uses a shared auth-session store to track Supabase sign-in, sign-out, and token refresh events. Supabase persists the auth session in browser storage and restores it on reload; the session store keeps React UI state synchronized with it.
 
+### Support-ticket delivery
+
+Support tickets are delivered to the landing-page admin inbox (`public.messages` in the `blankco-landingpage` Supabase project) as well as the customer's own ticket list. Set `VITE_INTAKE_SUPABASE_URL` and `VITE_INTAKE_SUPABASE_ANON_KEY` to that project; the checked-in `.env.example` documents both pairs. The intake anon key is a publishable value — the landing schema allows anonymous ticket inserts but only allowlisted admins can read them.
+
+The landing site also serves this app at `/portal/`. Its `npm run build` builds `../CPL` with `VITE_BASE_PATH=/portal/` and copies the output into `blankco-landingpage/public/portal` when both repositories are checked out side by side.
+
+When deploying under `/portal/`, add `https://www.blankcoph.solutions/portal/` (and any preview URL) to the Supabase Auth redirect allowlist. Sign-up and email-change requests use `${window.location.origin}${import.meta.env.BASE_URL}` so confirmation links return to the embedded portal.
+
 Amounts are displayed in Philippine pesos (PHP). Supabase invoice, order, and payment numeric amounts should be entered in PHP; changing the display currency does not perform foreign-exchange conversion.
 
 Build and type-check with `npm run build`.

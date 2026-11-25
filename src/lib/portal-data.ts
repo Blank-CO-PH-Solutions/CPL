@@ -1,5 +1,6 @@
 import type { PortalData, Profile } from '../types'
 import { supabase } from './supabase'
+import { sendTicketToAdmin, type TicketSender } from './ticket-intake'
 
 type DbOrder = {
   id: string
@@ -151,7 +152,17 @@ export async function createOrderRequest(userId: string, title: string, category
   if (error) throw error
 }
 
-export async function createSupportTicket(userId: string, title: string, category: string, message: string) {
+export async function createSupportTicket(
+  userId: string,
+  title: string,
+  category: string,
+  message: string,
+  sender: TicketSender,
+) {
+  // Deliver to the landing-page admin inbox first so support staff receive every
+  // request, then keep the customer-scoped copy that powers their ticket list.
+  await sendTicketToAdmin({ ...sender, subject: title, category, message })
+
   const { error } = await requireClient().from('support_tickets').insert({
     customer_id: userId,
     subject: title,

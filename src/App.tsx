@@ -9,6 +9,7 @@ import {
 import type { Activity, Invoice, Order, Page, Payment, PortalData, Profile } from './types'
 import { createOrderRequest, createSupportTicket, loadPortalData, saveProfile } from './lib/portal-data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { sendTicketToAdmin } from './lib/ticket-intake'
 import { startAuthSessionStore, useAuthSession } from './lib/session-store'
 
 const iconMap = {
@@ -142,7 +143,14 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
       const action = mode
       const result = action === 'login'
         ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } })
+        : await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: { full_name: fullName },
+              emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
+            },
+          })
 
       if (result.error) {
         setMessage({ type: 'error', text: result.error.message })
@@ -325,15 +333,27 @@ export default function App() {
     const form = new FormData(event.currentTarget)
     const title = String(form.get('title') || '').trim()
     const category = String(form.get('category') || 'Other')
-    const message = String(form.get('message') || '')
+    const message = String(form.get('message') || '').trim()
     if (!title) return
+    const sender = {
+      name: userId ? displayName : String(form.get('name') || '').trim(),
+      email: userId ? displayEmail : String(form.get('email') || '').trim(),
+      company: data.profile.company || 'Customer portal',
+    }
+    if (!sender.email) {
+      showToast('Add an email address so our team can reply to your ticket.')
+      return
+    }
     try {
-      if (userId) await createSupportTicket(userId, title, category, message)
-      else {
+      if (userId) {
+        await createSupportTicket(userId, title, category, message, sender)
+      } else {
+        await sendTicketToAdmin({ ...sender, subject: title, category, message })
         const id = `TKT-DEMO-${Date.now().toString().slice(-5)}`
-        updateDemoState({ ...data, tickets: [{ id, title, category, status: 'Open', updated: 'Updated just now', initials }, ...data.tickets] })
+        const demoInitials = sender.name.split(/\s+/).map(value => value[0]).slice(0, 2).join('').toUpperCase() || 'C'
+        updateDemoState({ ...data, tickets: [{ id, title, category, status: 'Open', updated: 'Updated just now', initials: demoInitials }, ...data.tickets] })
       }
-      setModal(null); navigate('support'); showToast('Your support request has been sent.')
+      setModal(null); navigate('support'); showToast('Your support ticket was sent to the Blank CO team.')
       if (userId) await refreshData()
     } catch (error) { showToast(error instanceof Error ? error.message : 'Could not send support request.') }
   }
@@ -350,7 +370,10 @@ export default function App() {
       let emailNeedsConfirmation = false
       if (userId) {
         if (profile.email !== session?.user.email) {
-          const { error } = await supabase!.auth.updateUser({ email: profile.email })
+          const { error } = await supabase!.auth.updateUser(
+            { email: profile.email },
+            { emailRedirectTo: `${window.location.origin}${import.meta.env.BASE_URL}` },
+          )
           if (error) throw error
           emailNeedsConfirmation = true
         }
@@ -461,7 +484,7 @@ export default function App() {
     {mobileMenu && <button className="sidebar-backdrop" onClick={() => setMobileMenu(false)} aria-label="Close navigation" />}
     {modal && <div className="modal-layer open" onMouseDown={event => { if (event.target === event.currentTarget) setModal(null) }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div className="modal-head"><h2 id="modalTitle">{modal === 'order' ? 'Request a new order' : modal === 'ticket' ? 'Contact support' : modal === 'payment' ? 'Complete your payment' : modal === 'detail' ? `Order ${selectedId}` : modal === 'notifications' ? 'You’re all caught up' : modal === 'password' ? 'Change password' : 'Two-factor authentication'}</h2><button className="modal-close" onClick={() => setModal(null)} aria-label="Close"><X size={19} /></button></div>
       {modal === 'order' && <form onSubmit={event => void handleOrderSubmit(event)}><div className="modal-body"><p>Tell us a little about what you need. A member of our team will follow up to confirm scope and pricing.</p><div className="field"><label htmlFor="orderTitle">What do you need?</label><input id="orderTitle" name="title" required placeholder="e.g. Brand identity design" /></div><div className="field"><label htmlFor="orderDescription">A few details</label><textarea id="orderDescription" name="description" placeholder="Share a short description of your request" /></div><div className="field"><label htmlFor="orderCategory">Service type</label><select id="orderCategory" name="category">{['Design services', 'Digital services', 'Creative services', 'Consulting', 'Other'].map(option => <option key={option}>{option}</option>)}</select></div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Cancel</Button><Button primary type="submit">Send request</Button></div></form>}
-      {modal === 'ticket' && <form onSubmit={event => void handleTicketSubmit(event)}><div className="modal-body"><p>Send our team a note and we'll get back to you as soon as possible.</p><div className="field"><label htmlFor="ticketSubject">Subject</label><input id="ticketSubject" name="title" required placeholder="How can we help?" /></div><div className="field"><label htmlFor="ticketCategory">Topic</label><select id="ticketCategory" name="category">{['Order question', 'Billing', 'Account support', 'Other'].map(option => <option key={option}>{option}</option>)}</select></div><div className="field"><label htmlFor="ticketMessage">Message</label><textarea id="ticketMessage" name="message" required placeholder="Add a few details..." /></div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Cancel</Button><Button primary type="submit">Send message</Button></div></form>}
+      {modal === 'ticket' && <form onSubmit={event => void handleTicketSubmit(event)}><div className="modal-body"><p>Send our team a note and we'll get back to you as soon as possible. Your ticket is delivered to the Blank CO support inbox.</p>{!session && <div className="field-grid"><div className="field"><label htmlFor="ticketName">Your name</label><input id="ticketName" name="name" required maxLength={100} autoComplete="name" placeholder="Full name" /></div><div className="field"><label htmlFor="ticketEmail">Email address</label><input id="ticketEmail" name="email" type="email" required maxLength={254} autoComplete="email" placeholder="you@company.com" /></div></div>}<div className="field"><label htmlFor="ticketSubject">Subject</label><input id="ticketSubject" name="title" required maxLength={100} placeholder="How can we help?" /></div><div className="field"><label htmlFor="ticketCategory">Topic</label><select id="ticketCategory" name="category">{['Order question', 'Billing', 'Account support', 'Technical issue', 'Other'].map(option => <option key={option}>{option}</option>)}</select></div><div className="field"><label htmlFor="ticketMessage">Message</label><textarea id="ticketMessage" name="message" required minLength={20} maxLength={500} rows={5} placeholder="Add a few details (at least 20 characters)..." /><small className="auth-hint">Include enough detail for the team to act on it. 20–500 characters.</small></div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Cancel</Button><Button primary type="submit">Send ticket</Button></div></form>}
       {modal === 'payment' && <><div className="modal-body"><p>Online payments are not connected yet. This invoice is read-only until a payment gateway is configured.</p>{modalInvoice && <div className="payment-total"><span>{modalInvoice.id} · Balance due</span><strong>{money(modalInvoice.amount - modalInvoice.paid)}</strong></div>}<div className="field-help"><Icon name="lock" size={13} /> No payment gateway is connected, so no payment can be submitted here.</div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'detail' && <><div className="modal-body">{modalOrder && <><div className="settings-row modal-order-row"><div><strong>{modalOrder.product}</strong><small>{modalOrder.category} · Ordered {modalOrder.date}</small></div><Badge>{modalOrder.status}</Badge></div><div className="payment-total"><span>Order total</span><strong>{money(modalOrder.amount)}</strong></div><p>Payment status: <strong>{modalOrder.payment}</strong></p><p>Questions about this order? <button className="text-link" onClick={() => setModal('ticket')}>Contact our team →</button></p></>}</div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'notifications' && <><div className="modal-body"><p>Your important order, billing, and support updates will show up here.</p><EmptyState title="No new notifications" message="Check back later for new updates." icon="bell" /></div><div className="modal-footer"><Button primary onClick={() => setModal(null)}>Done</Button></div></>}
