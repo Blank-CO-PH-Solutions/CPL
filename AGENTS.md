@@ -15,7 +15,7 @@ Customer portal for Blank CO PH Solutions (branded "neostar"): a React 19 + Type
 - `src/lib/portal-data.ts` — the only data layer. Maps snake_case Supabase rows into the camelCase display types in `src/types.ts` and performs inserts/updates.
 - `src/lib/supabase.ts` — client created only when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are both set; `supabase` is `null` otherwise.
 - `src/lib/session-store.ts` — shared auth session store (`useSyncExternalStore`); mount/unmount via `startAuthSessionStore()` in `App`.
-- `src/lib/ticket-intake.ts` — second Supabase client for the landing-page admin inbox (`public.messages`). `createSupportTicket` writes both the landing ticket and the customer-scoped `support_tickets` row.
+- `src/lib/ticket-intake.ts` — second Supabase client for the landing-page admin inbox (`public.messages`). `createSupportTicket` writes both the landing ticket and the customer-scoped `support_tickets` row, then invokes the landing project's `notify-ticket` Edge Function, which emails the ticket to `hello@blankcoph.solutions` via GoDaddy Titan SMTP.
 - `src/styles.css` — all styling; UI relies on existing class names (`.panel`, `.page-card`, `.badge` statuses via `statusClass`, etc.).
 - `supabase/migrations/` — schema, triggers, and RLS policies. This is the real backend contract.
 
