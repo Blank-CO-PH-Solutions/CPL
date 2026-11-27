@@ -56,6 +56,17 @@ export async function getChatThread(threadId: string): Promise<ChatConversation>
   return (await chatRequest({ action: 'thread', threadId })) as unknown as ChatConversation
 }
 
+export function subscribeChatUpdates(onChatId: (chatId: string) => void) {
+  const channel = intakeSupabase
+    .channel('support-chat')
+    .on('broadcast', { event: 'updated' }, ({ payload }) => {
+      const chatId = payload?.chatId as string | undefined
+      if (chatId) onChatId(chatId)
+    })
+    .subscribe()
+  return () => { void intakeSupabase.removeChannel(channel) }
+}
+
 export async function sendChatReply(threadId: string, body: string): Promise<void> {
   await chatRequest({ action: 'reply', threadId, body })
 }

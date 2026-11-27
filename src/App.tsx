@@ -10,7 +10,7 @@ import type { Activity, Invoice, Order, Page, Payment, PortalData, Profile } fro
 import { createOrderRequest, createSupportTicket, loadPortalData, saveProfile } from './lib/portal-data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { sendTicketToAdmin } from './lib/ticket-intake'
-import { findChatThread, getChatThread, listChatThreads, sendChatReply, type ChatThread } from './lib/chat'
+import { findChatThread, getChatThread, listChatThreads, sendChatReply, subscribeChatUpdates, type ChatThread } from './lib/chat'
 import { startAuthSessionStore, useAuthSession } from './lib/session-store'
 
 const iconMap = {
@@ -280,6 +280,13 @@ export default function App() {
   }, [userId, refreshData])
 
   useEffect(() => {
+    if (!userId) return undefined
+    return subscribeChatUpdates(() => {
+      void listChatThreads().then(setChatThreads).catch(() => undefined)
+    })
+  }, [userId])
+
+  useEffect(() => {
     if (modal !== 'chat' || !chatThreadId) return undefined
     let active = true
     setChatLoading(true)
@@ -295,10 +302,13 @@ export default function App() {
       }
     }
     void load()
-    const interval = window.setInterval(() => void load(), 3000)
+    const unsubscribe = subscribeChatUpdates((chatId) => {
+      if (chatId === chatThreadId) void load()
+      void listChatThreads().then(setChatThreads).catch(() => undefined)
+    })
     return () => {
       active = false
-      window.clearInterval(interval)
+      unsubscribe()
     }
   }, [modal, chatThreadId])
 
@@ -330,8 +340,8 @@ export default function App() {
 
   async function submitChatReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (chatReply.trim().length < 20) {
-      setChatError('Replies must be between 20 and 500 characters.')
+    if (!chatThreadId || !chatReply.trim() || chatReply.trim().length > 2000) {
+      setChatError('Replies must be between 1 and 2000 characters.')
       return
     }
     setChatSending(true)
@@ -588,8 +598,8 @@ export default function App() {
           )) : <p className="field-help">No messages in this chat yet.</p>}
         </div>
         <form onSubmit={event => void submitChatReply(event)} className="chat-composer">
-          <textarea value={chatReply} onChange={event => setChatReply(event.target.value)} minLength={20} maxLength={500} rows={3} placeholder="Write a reply (20–500 characters)" aria-label="Chat reply" />
-          <Button primary type="submit" disabled={chatSending || chatReply.trim().length < 20}>{chatSending ? 'Sending...' : 'Send reply'}</Button>
+          <textarea value={chatReply} onChange={event => setChatReply(event.target.value)} maxLength={2000} rows={3} placeholder="Write a reply" aria-label="Chat reply" />
+          <Button primary type="submit" disabled={chatSending || !chatReply.trim()}>{chatSending ? 'Sending...' : 'Send reply'}</Button>
         </form>
       </div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'payment' && <><div className="modal-body"><p>Online payments are not connected yet. This invoice is read-only until a payment gateway is configured.</p>{modalInvoice && <div className="payment-total"><span>{modalInvoice.id} · Balance due</span><strong>{money(modalInvoice.amount - modalInvoice.paid)}</strong></div>}<div className="field-help"><Icon name="lock" size={13} /> No payment gateway is connected, so no payment can be submitted here.</div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}

@@ -16,7 +16,7 @@ Customer portal for Blank CO PH Solutions (branded "neostar"): a React 19 + Type
 - `src/lib/supabase.ts` — client created only when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are both set; `supabase` is `null` otherwise.
 - `src/lib/session-store.ts` — shared auth session store (`useSyncExternalStore`); mount/unmount via `startAuthSessionStore()` in `App`.
 - `src/lib/ticket-intake.ts` — second Supabase client for the landing-page admin inbox (`public.messages`). `createSupportTicket` writes both the landing ticket and the customer-scoped `support_tickets` row, then invokes the landing project's `notify-ticket` Edge Function, which emails the ticket to `hello@blankcoph.solutions` via GoDaddy Titan SMTP.
-- `src/lib/chat.ts` — customer-side support chat. Obtains the CPL session token and calls the landing project's `chat` Edge Function; customer identity is verified against CPL's public JWKS. The Support page lists conversations and opens a chat modal that refreshes every few seconds.
+- `src/lib/chat.ts` — customer-side support chat. Obtains the CPL session token and calls the landing project's `chat` Edge Function; customer identity is verified against CPL's public JWKS. The Support page lists conversations and opens a chat modal; it subscribes to the landing project's `support-chat` Realtime broadcast (chat id only) and reloads the thread on updates.
 - `src/styles.css` — all styling; UI relies on existing class names (`.panel`, `.page-card`, `.badge` statuses via `statusClass`, etc.).
 - `supabase/migrations/` — schema, triggers, and RLS policies. This is the real backend contract.
 

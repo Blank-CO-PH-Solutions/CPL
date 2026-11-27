@@ -35,7 +35,7 @@ When deploying under `/portal/`, add `https://www.blankcoph.solutions/portal/` (
 
 Support requests are conversations, not one-way messages. Every submission (portal ticket, contact-page ticket, or contact-form inquiry) becomes a chat thread in the landing admin inbox. Signed-in portal customers can open **Support → Conversations** or click a ticket to read and reply; admins/devs open the same thread from **Admin → Messages**. A reply from either side is visible to the other within a few seconds.
 
-The chat has no separate database table: replies are rows in `public.messages` tagged `CPL chat · <original message id>`, which keeps the no-schema-change constraint. The landing `chat` Edge Function authorizes admins via their landing session and `admin_users`, and customers by verifying their CPL access token against CPL's public JWKS. Customers must be signed in to the portal to use chat.
+Chats use dedicated tables in the landing Supabase project (`support_chats`, `support_chat_messages`); older tagged-message threads were imported by migration `202611270001_support_chat.sql`. The landing `chat` Edge Function authorizes admins via their landing session and `admin_users`, and customers by verifying their CPL access token against CPL's public JWKS. After each reply it broadcasts a Realtime event containing only the chat id, which both UIs use to refresh instantly. Customers must be signed in to the portal to use chat.
 
 Amounts are displayed in Philippine pesos (PHP). Supabase invoice, order, and payment numeric amounts should be entered in PHP; changing the display currency does not perform foreign-exchange conversion.
 
