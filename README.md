@@ -31,6 +31,12 @@ The landing site also serves this app at `/portal/`. Its `npm run build` builds 
 
 When deploying under `/portal/`, add `https://www.blankcoph.solutions/portal/` (and any preview URL) to the Supabase Auth redirect allowlist. Sign-up and email-change requests use `${window.location.origin}${import.meta.env.BASE_URL}` so confirmation links return to the embedded portal.
 
+### Live support chat
+
+Support requests are conversations, not one-way messages. Every submission (portal ticket, contact-page ticket, or contact-form inquiry) becomes a chat thread in the landing admin inbox. Signed-in portal customers can open **Support → Conversations** or click a ticket to read and reply; admins/devs open the same thread from **Admin → Messages**. A reply from either side is visible to the other within a few seconds.
+
+The chat has no separate database table: replies are rows in `public.messages` tagged `CPL chat · <original message id>`, which keeps the no-schema-change constraint. The landing `chat` Edge Function authorizes admins via their landing session and `admin_users`, and customers by verifying their CPL access token against CPL's public JWKS. Customers must be signed in to the portal to use chat.
+
 Amounts are displayed in Philippine pesos (PHP). Supabase invoice, order, and payment numeric amounts should be entered in PHP; changing the display currency does not perform foreign-exchange conversion.
 
 Build and type-check with `npm run build`.

@@ -336,3 +336,15 @@ tbody tr:hover td{background:#fbfbf8}
 .app-shell.sidebar-collapsed .sidebar-toggle{display:none}
 .app-shell.sidebar-collapsed .brand-mark{transition:transform .16s ease,box-shadow .16s ease}
 .app-shell.sidebar-collapsed .brand:hover .brand-mark{transform:translateY(-1px);box-shadow:0 5px 16px #00000024}
+
+/* Live support chat */
+.ticket-chat-row{width:100%;background:transparent;border:0;border-top:1px solid #f0f2f1;text-align:left;color:inherit;font:inherit;cursor:pointer;transition:background .15s}
+.ticket-chat-row:hover{background:#f8faf9}
+.chat-thread{display:flex;flex-direction:column;gap:9px;max-height:320px;overflow-y:auto;margin:14px 0;padding:11px;background:#f7f9f8;border:1px solid #edf0ee;border-radius:7px}
+.chat-bubble{max-width:86%;border:1px solid #e3e8e5;border-radius:8px;padding:9px 11px;background:#fff;align-self:flex-start}
+.chat-bubble-customer{background:#216a53;border-color:#216a53;color:#fff;align-self:flex-end}
+.chat-bubble small{display:block;font-size:8px;opacity:.65}
+.chat-bubble p{font-size:10px;line-height:1.55;margin:5px 0;white-space:pre-wrap;color:inherit}
+.chat-composer{display:flex;flex-direction:column;gap:8px}
+.chat-composer textarea{width:100%;border:1px solid #e5eae7;border-radius:5px;padding:9px 10px;font-size:10px;resize:vertical;min-height:66px}
+.auth-error{color:#a13f3f!important}

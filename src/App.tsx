@@ -10,6 +10,7 @@ import type { Activity, Invoice, Order, Page, Payment, PortalData, Profile } fro
 import { createOrderRequest, createSupportTicket, loadPortalData, saveProfile } from './lib/portal-data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { sendTicketToAdmin } from './lib/ticket-intake'
+import { findChatThread, getChatThread, listChatThreads, sendChatReply, type ChatThread } from './lib/chat'
 import { startAuthSessionStore, useAuthSession } from './lib/session-store'
 
 const iconMap = {
@@ -187,7 +188,7 @@ function AuthScreen({ onDemo }: { onDemo: () => void }) {
   </section></main>
 }
 
-type ModalKind = 'order' | 'ticket' | 'payment' | 'detail' | 'notifications' | 'password' | 'security' | null
+type ModalKind = 'order' | 'ticket' | 'payment' | 'detail' | 'notifications' | 'password' | 'security' | 'chat' | null
 
 export default function App() {
   const { session, ready: authReady } = useAuthSession()
@@ -210,6 +211,14 @@ export default function App() {
   })
   const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width:800px)').matches)
   const workspaceMenuRef = useRef<HTMLDivElement>(null)
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([])
+  const [chatThreadId, setChatThreadId] = useState('')
+  const [chatTitle, setChatTitle] = useState('')
+  const [chatConversation, setChatConversation] = useState<{ replies: Array<{ id: string; author: 'customer' | 'admin'; name: string; body: string; createdAt: string }> } | null>(null)
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatSending, setChatSending] = useState(false)
+  const [chatReply, setChatReply] = useState('')
+  const [chatError, setChatError] = useState('')
 
   useEffect(() => {
     clearStaleDemoData()
@@ -257,6 +266,87 @@ export default function App() {
   useEffect(() => {
     if (userId) void refreshData()
   }, [userId, refreshData])
+
+  useEffect(() => {
+    if (!userId) {
+      setChatThreads([])
+      return undefined
+    }
+    let active = true
+    void listChatThreads()
+      .then((threads) => { if (active) setChatThreads(threads) })
+      .catch(() => { if (active) setChatThreads([]) })
+    return () => { active = false }
+  }, [userId, refreshData])
+
+  useEffect(() => {
+    if (modal !== 'chat' || !chatThreadId) return undefined
+    let active = true
+    setChatLoading(true)
+    setChatError('')
+    const load = async () => {
+      try {
+        const conversation = await getChatThread(chatThreadId)
+        if (active) setChatConversation(conversation)
+      } catch (error) {
+        if (active) setChatError(error instanceof Error ? error.message : 'The chat could not be loaded.')
+      } finally {
+        if (active) setChatLoading(false)
+      }
+    }
+    void load()
+    const interval = window.setInterval(() => void load(), 3000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [modal, chatThreadId])
+
+  function openChat(threadId: string, title: string) {
+    setChatThreadId(threadId)
+    setChatTitle(title)
+    setChatConversation(null)
+    setChatReply('')
+    setChatError('')
+    setModal('chat')
+  }
+
+  async function openTicketChat(ticket: { id: string; title: string }) {
+    if (!userId) {
+      showToast('Sign in to read and reply to support chats.')
+      return
+    }
+    try {
+      const threadId = await findChatThread(ticket.title)
+      if (!threadId) {
+        showToast('No chat is linked to this ticket yet. Send a new request to start one.')
+        return
+      }
+      openChat(threadId, ticket.title)
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'The chat could not be opened.')
+    }
+  }
+
+  async function submitChatReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (chatReply.trim().length < 20) {
+      setChatError('Replies must be between 20 and 500 characters.')
+      return
+    }
+    setChatSending(true)
+    setChatError('')
+    try {
+      await sendChatReply(chatThreadId, chatReply.trim())
+      setChatReply('')
+      setChatConversation(await getChatThread(chatThreadId))
+      void listChatThreads().then(setChatThreads).catch(() => undefined)
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'The reply could not be sent.')
+    } finally {
+      setChatSending(false)
+    }
+  }
 
   useEffect(() => {
     if (!toast) return
@@ -473,7 +563,7 @@ export default function App() {
           {!data.payments.length && <tr><td colSpan={7}><EmptyState title="No payments yet" message="Your completed payments will appear here." /></td></tr>}
         </DataTable></>}
 
-        {page === 'support' && <><PageHeading title="How can we help?" subtitle="Get support from our team, or follow up on an existing request." action={<Button primary icon="plus" onClick={() => setModal('ticket')}>New support ticket</Button>} /><div className="support-grid"><section className="page-card"><PanelHeader title="Your support tickets" subtitle="Updates from our customer care team" right={<span className="toolbar-note">{data.tickets.length} tickets</span>} />{data.tickets.length ? data.tickets.map(ticket => <div className="ticket-row" key={ticket.id}><span className="ticket-avatar">{ticket.initials}</span><span className="ticket-copy"><strong>{ticket.title}</strong><small>{ticket.id} · {ticket.category}</small></span><span className="ticket-side"><Badge>{ticket.status}</Badge><small>{ticket.updated}</small></span></div>) : <EmptyState title="No support tickets yet" message="Contact us if there's anything we can help with." icon="chat" />}</section><section className="page-card"><PanelHeader title="Frequently asked" subtitle="A few quick answers to common questions" />{[['Where can I track my order?', 'Visit the Orders page for live status updates.'], ['How do I pay an invoice?', 'Open Invoices to review balances and due dates.'], ['Can I download a receipt?', 'Find any payment under Payment history.'], ['How do I update my billing details?', 'Edit your company profile in Settings.']].map(([title, text]) => <div className="settings-row" key={title}><div><strong>{title}</strong><small>{text}</small></div></div>)}</section></div></>}
+        {page === 'support' && <><PageHeading title="How can we help?" subtitle="Get support from our team, or follow up on an existing request." action={<Button primary icon="plus" onClick={() => setModal('ticket')}>New support ticket</Button>} /><div className="support-grid"><section className="page-card"><PanelHeader title="Your support tickets" subtitle="Updates from our customer care team" right={<span className="toolbar-note">{data.tickets.length} tickets</span>} />{data.tickets.length ? data.tickets.map(ticket => <button type="button" className="ticket-row ticket-chat-row" key={ticket.id} onClick={() => void openTicketChat(ticket)}><span className="ticket-avatar">{ticket.initials}</span><span className="ticket-copy"><strong>{ticket.title}</strong><small>{ticket.id} · {ticket.category}</small></span><span className="ticket-side"><Badge>{ticket.status}</Badge><small>Open chat →</small></span></button>) : <EmptyState title="No support tickets yet" message="Contact us if there's anything we can help with." icon="chat" />}</section><section className="page-card"><PanelHeader title="Conversations" subtitle="Live chats with the Blank CO support team" right={<span className="toolbar-note">{chatThreads.length} chats</span>} />{chatThreads.length ? chatThreads.map(thread => <button type="button" className="ticket-row ticket-chat-row" key={thread.id} onClick={() => openChat(thread.id, thread.subject)}><span className="ticket-avatar"><Icon name="chat" size={15} /></span><span className="ticket-copy"><strong>{thread.subject}</strong><small>{thread.name} · {thread.replyCount} {thread.replyCount === 1 ? 'reply' : 'replies'}</small></span><span className="ticket-side"><small>{new Date(thread.lastReplyAt).toLocaleDateString()}</small><small>Open chat →</small></span></button>) : <EmptyState title="No conversations yet" message="Sign in and send a ticket to start a live chat with our team." icon="chat" />}</section><section className="page-card"><PanelHeader title="Frequently asked" subtitle="A few quick answers to common questions" />{[['Where can I track my order?', 'Visit the Orders page for live status updates.'], ['How do I pay an invoice?', 'Open Invoices to review balances and due dates.'], ['Can I download a receipt?', 'Find any payment under Payment history.'], ['How do I update my billing details?', 'Edit your company profile in Settings.']].map(([title, text]) => <div className="settings-row" key={title}><div><strong>{title}</strong><small>{text}</small></div></div>)}</section></div></>}
 
         {page === 'settings' && <><PageHeading title="Account settings" subtitle="Manage your profile and how we keep you in the loop." action={<Button primary icon="check" type="submit" onClick={() => document.getElementById('profileSave')?.click()}>Save changes</Button>} /><div className="account-grid"><section className="page-card"><PanelHeader title="Personal information" subtitle="Your account contact details" /><form className="settings-form" onSubmit={event => void handleProfileSubmit(event)}><div className="field-grid"><div className="field"><label htmlFor="firstName">First name</label><input id="firstName" name="firstName" defaultValue={data.profile.fullName.split(' ')[0] || ''} /></div><div className="field"><label htmlFor="lastName">Last name</label><input id="lastName" name="lastName" defaultValue={data.profile.fullName.split(' ').slice(1).join(' ')} /></div></div><div className="field"><label htmlFor="email">Email address</label><input id="email" type="email" name="email" defaultValue={session?.user.email || data.profile.email || ''} /></div><div className="field"><label htmlFor="phone">Phone number</label><input id="phone" name="phone" defaultValue={data.profile.phone} /></div><div className="panel-header settings-subhead"><div><div className="panel-title">Company information</div><div className="panel-subtitle">Your business and billing details</div></div></div><div className="field"><label htmlFor="company">Company name</label><input id="company" name="company" defaultValue={company} /></div><div className="field"><label htmlFor="address">Billing address</label><input id="address" name="address" defaultValue={data.profile.address} /></div><div className="field"><label htmlFor="taxId">Tax ID <span className="field-help">(optional)</span></label><input id="taxId" name="taxId" defaultValue={data.profile.taxId} placeholder="Add a tax ID" /></div><button id="profileSave" type="submit" className="visually-hidden">Save profile</button></form></section><section><div className="page-card"><PanelHeader title="Notifications" subtitle="Choose what updates you receive" />{[['Order updates', 'Progress and delivery status'], ['Invoice reminders', 'Upcoming and overdue invoices'], ['Payment receipts', 'Confirmation of successful payments'], ['Product news', 'Tips and occasional announcements']].map(([title, text], index) => <div className="settings-row" key={title}><div><strong>{title}</strong><small>{text}</small></div><input className="toggle" type="checkbox" defaultChecked={index < 3} aria-label={title} /></div>)}</div><div className="page-card"><PanelHeader title="Security" subtitle="Keep your account protected" /><div className="settings-row"><div><strong>Password</strong><small>Manage your account password</small></div><Button onClick={() => setModal('password')}>Change</Button></div><div className="settings-row"><div><strong>Two-factor authentication</strong><small>Add another layer of security</small></div><Button onClick={() => setModal('security')}>Set up</Button></div></div></section></div></>}
 
@@ -482,9 +572,26 @@ export default function App() {
     </main>
 
     {mobileMenu && <button className="sidebar-backdrop" onClick={() => setMobileMenu(false)} aria-label="Close navigation" />}
-    {modal && <div className="modal-layer open" onMouseDown={event => { if (event.target === event.currentTarget) setModal(null) }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div className="modal-head"><h2 id="modalTitle">{modal === 'order' ? 'Request a new order' : modal === 'ticket' ? 'Contact support' : modal === 'payment' ? 'Complete your payment' : modal === 'detail' ? `Order ${selectedId}` : modal === 'notifications' ? 'You’re all caught up' : modal === 'password' ? 'Change password' : 'Two-factor authentication'}</h2><button className="modal-close" onClick={() => setModal(null)} aria-label="Close"><X size={19} /></button></div>
+    {modal && <div className="modal-layer open" onMouseDown={event => { if (event.target === event.currentTarget) setModal(null) }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div className="modal-head"><h2 id="modalTitle">{modal === 'chat' ? `Chat · ${chatTitle}` : modal === 'order' ? 'Request a new order' : modal === 'ticket' ? 'Contact support' : modal === 'payment' ? 'Complete your payment' : modal === 'detail' ? `Order ${selectedId}` : modal === 'notifications' ? 'You’re all caught up' : modal === 'password' ? 'Change password' : 'Two-factor authentication'}</h2><button className="modal-close" onClick={() => setModal(null)} aria-label="Close"><X size={19} /></button></div>
       {modal === 'order' && <form onSubmit={event => void handleOrderSubmit(event)}><div className="modal-body"><p>Tell us a little about what you need. A member of our team will follow up to confirm scope and pricing.</p><div className="field"><label htmlFor="orderTitle">What do you need?</label><input id="orderTitle" name="title" required placeholder="e.g. Brand identity design" /></div><div className="field"><label htmlFor="orderDescription">A few details</label><textarea id="orderDescription" name="description" placeholder="Share a short description of your request" /></div><div className="field"><label htmlFor="orderCategory">Service type</label><select id="orderCategory" name="category">{['Design services', 'Digital services', 'Creative services', 'Consulting', 'Other'].map(option => <option key={option}>{option}</option>)}</select></div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Cancel</Button><Button primary type="submit">Send request</Button></div></form>}
       {modal === 'ticket' && <form onSubmit={event => void handleTicketSubmit(event)}><div className="modal-body"><p>Send our team a note and we'll get back to you as soon as possible. Your ticket is delivered to the Blank CO support inbox.</p>{!session && <div className="field-grid"><div className="field"><label htmlFor="ticketName">Your name</label><input id="ticketName" name="name" required maxLength={100} autoComplete="name" placeholder="Full name" /></div><div className="field"><label htmlFor="ticketEmail">Email address</label><input id="ticketEmail" name="email" type="email" required maxLength={254} autoComplete="email" placeholder="you@company.com" /></div></div>}<div className="field"><label htmlFor="ticketSubject">Subject</label><input id="ticketSubject" name="title" required maxLength={100} placeholder="How can we help?" /></div><div className="field"><label htmlFor="ticketCategory">Topic</label><select id="ticketCategory" name="category">{['Order question', 'Billing', 'Account support', 'Technical issue', 'Other'].map(option => <option key={option}>{option}</option>)}</select></div><div className="field"><label htmlFor="ticketMessage">Message</label><textarea id="ticketMessage" name="message" required minLength={20} maxLength={500} rows={5} placeholder="Add a few details (at least 20 characters)..." /><small className="auth-hint">Include enough detail for the team to act on it. 20–500 characters.</small></div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Cancel</Button><Button primary type="submit">Send ticket</Button></div></form>}
+      {modal === 'chat' && <><div className="modal-body">
+        <p>Chat live with the Blank CO team. New replies appear automatically.</p>
+        {chatError && <p role="alert" className="auth-error">{chatError}</p>}
+        <div className="chat-thread">
+          {chatLoading && !chatConversation ? <p className="field-help">Loading conversation...</p> : chatConversation?.replies?.length ? chatConversation.replies.map(reply => (
+            <div className={`chat-bubble ${reply.author === 'customer' ? 'chat-bubble-customer' : 'chat-bubble-admin'}`} key={reply.id}>
+              <small>{reply.name} · {reply.author === 'customer' ? 'You' : 'Blank CO'}</small>
+              <p>{reply.body}</p>
+              <small>{new Date(reply.createdAt).toLocaleString()}</small>
+            </div>
+          )) : <p className="field-help">No messages in this chat yet.</p>}
+        </div>
+        <form onSubmit={event => void submitChatReply(event)} className="chat-composer">
+          <textarea value={chatReply} onChange={event => setChatReply(event.target.value)} minLength={20} maxLength={500} rows={3} placeholder="Write a reply (20–500 characters)" aria-label="Chat reply" />
+          <Button primary type="submit" disabled={chatSending || chatReply.trim().length < 20}>{chatSending ? 'Sending...' : 'Send reply'}</Button>
+        </form>
+      </div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'payment' && <><div className="modal-body"><p>Online payments are not connected yet. This invoice is read-only until a payment gateway is configured.</p>{modalInvoice && <div className="payment-total"><span>{modalInvoice.id} · Balance due</span><strong>{money(modalInvoice.amount - modalInvoice.paid)}</strong></div>}<div className="field-help"><Icon name="lock" size={13} /> No payment gateway is connected, so no payment can be submitted here.</div></div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'detail' && <><div className="modal-body">{modalOrder && <><div className="settings-row modal-order-row"><div><strong>{modalOrder.product}</strong><small>{modalOrder.category} · Ordered {modalOrder.date}</small></div><Badge>{modalOrder.status}</Badge></div><div className="payment-total"><span>Order total</span><strong>{money(modalOrder.amount)}</strong></div><p>Payment status: <strong>{modalOrder.payment}</strong></p><p>Questions about this order? <button className="text-link" onClick={() => setModal('ticket')}>Contact our team →</button></p></>}</div><div className="modal-footer"><Button onClick={() => setModal(null)}>Close</Button></div></>}
       {modal === 'notifications' && <><div className="modal-body"><p>Your important order, billing, and support updates will show up here.</p><EmptyState title="No new notifications" message="Check back later for new updates." icon="bell" /></div><div className="modal-footer"><Button primary onClick={() => setModal(null)}>Done</Button></div></>}
